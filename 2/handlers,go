@@ -1,0 +1,158 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+)
+
+func getMovies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	director := r.URL.Query().Get("director")
+	minRatingStr := r.URL.Query().Get("minRating")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	result := movies
+
+	if director != "" {
+		var filtered []Movie
+		for _, m := range result {
+			if m.Director == director {
+				filtered = append(filtered, m)
+			}
+		}
+		result = filtered
+	}
+
+	if minRatingStr != "" {
+		minRating, err := strconv.ParseFloat(minRatingStr, 64)
+		if err == nil {
+			var filtered []Movie
+			for _, m := range result {
+				if m.Rating >= minRating {
+					filtered = append(filtered, m)
+				}
+			}
+			result = filtered
+		}
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+func getMovieByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for _, m := range movies {
+		if m.ID == id {
+			json.NewEncoder(w).Encode(m)
+			return
+		}
+	}
+
+	http.Error(w, "Movie not found", http.StatusNotFound)
+}
+
+func createMovie(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var input MovieInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Bad Request: invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateMovie(input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	movie := Movie{
+		ID:       nextID,
+		Title:    input.Title,
+		Year:     input.Year,
+		Rating:   input.Rating,
+		Director: input.Director,
+	}
+	nextID++
+	movies = append(movies, movie)
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(movie)
+}
+
+func updateMovie(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	var input MovieInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Bad Request: invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateMovie(input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i, m := range movies {
+		if m.ID == id {
+			movies[i].Title = input.Title
+			movies[i].Year = input.Year
+			movies[i].Rating = input.Rating
+			movies[i].Director = input.Director
+			json.NewEncoder(w).Encode(movies[i])
+			return
+		}
+	}
+
+	http.Error(w, "Movie not found", http.StatusNotFound)
+}
+
+func deleteMovie(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i, m := range movies {
+		if m.ID == id {
+			movies = append(movies[:i], movies[i+1:]...)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+
+	http.Error(w, "Movie not found", http.StatusNotFound)
+}
