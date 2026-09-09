@@ -6,6 +6,10 @@ import (
 )
 
 func main() {
+	http.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
+	})
+
 	http.HandleFunc("GET /movies", getMovies)
 	http.HandleFunc("GET /movies/{id}", getMovieByID)
 	http.HandleFunc("POST /movies", createMovie)
